@@ -1,29 +1,30 @@
 {
   "expo": {
-    "name": "suspicious-orange-scones",
-    "slug": "snack-60ee9059-d6f7-427f-bd5c-6c62cd293bf1",
+    "name": "IntervalSync",
+    "slug": "interval-sync",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
+      "backgroundColor": "#090D16"
     },
     "android": {
+      "package": "com.reomar.intervalsync",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+        "backgroundColor": "#090D16"
+      }
     }
   }
 }
