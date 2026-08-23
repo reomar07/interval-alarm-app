@@ -4,11 +4,11 @@
     "slug": "interval-sync",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./Assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": false,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./Assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#090D16"
     },
@@ -22,7 +22,7 @@
         "RECEIVE_BOOT_COMPLETED"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./Assets/adaptive-icon.png",
         "backgroundColor": "#090D16"
       }
     }
