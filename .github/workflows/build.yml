@@ -23,32 +23,24 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: |
+          npm install --legacy-peer-deps
+          npm install -D @react-native-community/cli
 
       - name: Prebuild Native Android
         run: npx expo prebuild --platform android --no-install
 
-      - name: Bundle Offline JavaScript
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx react-native bundle \
-            --platform android \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res/
-
       - name: Make Gradle Executable
         run: chmod +x android/gradlew
 
-      - name: Build Standalone APK
+      - name: Build Standalone Release APK
         working-directory: android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-        run: ./gradlew assembleDebug --no-daemon -x lint -x test
+        run: ./gradlew assembleRelease --no-daemon -x lint -x test
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: IntervalSync-Offline-APK
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: IntervalSync-Final-APK
+          path: android/app/build/outputs/apk/release/*.apk
