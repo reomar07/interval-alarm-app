@@ -28,10 +28,20 @@ jobs:
       - name: Prebuild Native Android
         run: npx expo prebuild --platform android --no-install
 
+      - name: Bundle Offline JavaScript
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res/
+
       - name: Make Gradle Executable
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK
+      - name: Build Standalone APK
         working-directory: android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
@@ -40,5 +50,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: IntervalSync-App
+          name: IntervalSync-Offline-APK
           path: android/app/build/outputs/apk/debug/*.apk
