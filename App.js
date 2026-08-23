@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,11 +8,12 @@ import {
   Switch,
   ScrollView,
   StatusBar,
-  Alert,
   Vibration
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { Audio } from 'expo-av';
+import * as DocumentPicker from 'expo-document-picker';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -23,12 +24,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const TONES = [
-  { id: 'default', name: 'Standard Bell' },
-  { id: 'radar', name: 'Radar Pulse' },
-  { id: 'chime', name: 'Gentle Chime' },
-  { id: 'siren', name: 'Heavy Alarm' }
-];
+const DEFAULT_CHIME = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
 
 export default function App() {
   const [alarms, setAlarms] = useState([]);
@@ -36,32 +32,92 @@ export default function App() {
   const [time, setTime] = useState('08:00');
   const [intervalDays, setIntervalDays] = useState('20');
   const [startOffset, setStartOffset] = useState(0);
-  const [selectedTone, setSelectedTone] = useState('default');
+  const [customAudio, setCustomAudio] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [isPlaying, setIsPlaying] = useState(false);
+  const soundRef = useRef(null);
 
   useEffect(() => {
     loadAlarms();
-    setupNotificationChannel();
+    setupAudioAndChannel();
     const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(interval);
+
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      const soundUri = notification.request.content.data?.audioUri || DEFAULT_CHIME;
+      playAlarmAudio(soundUri);
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+      stopAudio();
+    };
   }, []);
 
-  const setupNotificationChannel = async () => {
+  const setupAudioAndChannel = async () => {
     await Notifications.requestPermissionsAsync();
-    await Notifications.setNotificationChannelAsync('interval-alarm-channel', {
-      name: 'Interval Alarms',
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+    });
+
+    await Notifications.setNotificationChannelAsync('interval-audio-channel', {
+      name: 'Interval Audio Alarms',
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 500, 250, 500, 250, 1000],
+      vibrationPattern: [0, 800, 400, 800, 400, 1000],
       sound: 'default',
       enableLights: true,
       lightColor: '#6366F1',
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       bypassDnd: true,
     });
   };
 
+  const playAlarmAudio = async (uri) => {
+    try {
+      await stopAudio();
+      Vibration.vibrate([0, 800, 400, 800, 400, 1000], true);
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: true, isLooping: true, volume: 1.0 }
+      );
+      soundRef.current = sound;
+      setIsPlaying(true);
+    } catch (e) {
+      console.log('Error playing audio', e);
+    }
+  };
+
+  const stopAudio = async () => {
+    Vibration.cancel();
+    if (soundRef.current) {
+      try {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+      } catch (e) {}
+      soundRef.current = null;
+    }
+    setIsPlaying(false);
+  };
+
+  const pickCustomAudio = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'audio/*',
+      copyToCacheDirectory: true,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setCustomAudio({
+        uri: result.assets[0].uri,
+        name: result.assets[0].name,
+      });
+    }
+  };
+
   const loadAlarms = async () => {
-    const data = await AsyncStorage.getItem('@interval_alarms_v2');
+    const data = await AsyncStorage.getItem('@interval_alarms_v3');
     if (data) setAlarms(JSON.parse(data));
   };
 
@@ -84,11 +140,10 @@ export default function App() {
     const notifId = await Notifications.scheduleNotificationAsync({
       content: {
         title: `🚨 ${alarm.title || 'Interval Alarm'}`,
-        body: `Interval Target reached! Recurring every ${alarm.intervalDays} days.`,
-        sound: 'default',
-        channelId: 'interval-alarm-channel',
+        body: `Recurring alarm (${alarm.intervalDays}d loop). Tap or dismiss to stop.`,
+        data: { audioUri: alarm.audioUri },
+        channelId: 'interval-audio-channel',
         priority: Notifications.AndroidNotificationPriority.MAX,
-        vibrate: [0, 500, 250, 500, 250, 1000],
       },
       trigger: { seconds: triggerSeconds },
     });
@@ -105,7 +160,8 @@ export default function App() {
       title: title.trim() || `Routine (${days}d loop)`,
       time: time.trim() || '08:00',
       intervalDays: days,
-      tone: selectedTone,
+      audioUri: customAudio?.uri || DEFAULT_CHIME,
+      audioName: customAudio?.name || 'Standard Alert',
       nextTriggerDate: firstTarget.toISOString(),
       enabled: true,
     };
@@ -115,7 +171,7 @@ export default function App() {
 
     const updated = [newAlarm, ...alarms];
     setAlarms(updated);
-    await AsyncStorage.setItem('@interval_alarms_v2', JSON.stringify(updated));
+    await AsyncStorage.setItem('@interval_alarms_v3', JSON.stringify(updated));
     setTitle('');
   };
 
@@ -135,20 +191,7 @@ export default function App() {
     }));
 
     setAlarms(updated);
-    await AsyncStorage.setItem('@interval_alarms_v2', JSON.stringify(updated));
-  };
-
-  const testAlarmNow = async () => {
-    Vibration.vibrate([0, 500, 250, 500]);
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🔔 Test Alarm Triggered',
-        body: 'Audio and heavy vibration pattern are active!',
-        channelId: 'interval-alarm-channel',
-        priority: Notifications.AndroidNotificationPriority.MAX,
-      },
-      trigger: { seconds: 1 },
-    });
+    await AsyncStorage.setItem('@interval_alarms_v3', JSON.stringify(updated));
   };
 
   const deleteAlarm = async (id) => {
@@ -156,7 +199,7 @@ export default function App() {
     if (target?.notifId) await Notifications.cancelScheduledNotificationAsync(target.notifId);
     const filtered = alarms.filter((a) => a.id !== id);
     setAlarms(filtered);
-    await AsyncStorage.setItem('@interval_alarms_v2', JSON.stringify(filtered));
+    await AsyncStorage.setItem('@interval_alarms_v3', JSON.stringify(filtered));
   };
 
   const getRemainingTime = (isoString) => {
@@ -175,11 +218,20 @@ export default function App() {
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.header}>Interval<Text style={{ color: '#6366F1' }}>Sync</Text></Text>
-          <Text style={styles.subHeader}>Precision Multi-Day Scheduler</Text>
+          <Text style={styles.subHeader}>Precision Multi-Day Audio Scheduler</Text>
         </View>
-        <TouchableOpacity style={styles.testBtn} onPress={testAlarmNow}>
-          <Text style={styles.testBtnText}>⚡ Test</Text>
-        </TouchableOpacity>
+        {isPlaying ? (
+          <TouchableOpacity style={styles.stopBtn} onPress={stopAudio}>
+            <Text style={styles.stopBtnText}>⏹ STOP SOUND</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity 
+            style={styles.testBtn} 
+            onPress={() => playAlarmAudio(customAudio?.uri || DEFAULT_CHIME)}
+          >
+            <Text style={styles.testBtnText}>⚡ Test Tone</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -187,7 +239,7 @@ export default function App() {
           <Text style={styles.sectionLabel}>CREATE RECURRING ALARM</Text>
 
           <TextInput
-            placeholder="Label (e.g., Workout Cycle, Filter Change)"
+            placeholder="Label (e.g., Water Plants, Workout Loop)"
             placeholderTextColor="#64748B"
             value={title}
             onChangeText={setTitle}
@@ -230,17 +282,18 @@ export default function App() {
             ))}
           </View>
 
-          <Text style={styles.fieldLabel}>Alarm Tone Preset</Text>
-          <View style={styles.chipsRow}>
-            {TONES.map((t) => (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.chip, selectedTone === t.id && styles.chipActive]}
-                onPress={() => setSelectedTone(t.id)}
-              >
-                <Text style={[styles.chipText, selectedTone === t.id && styles.chipTextActive]}>{t.name}</Text>
+          <Text style={styles.fieldLabel}>Alarm Sound</Text>
+          <View style={styles.mediaRow}>
+            <TouchableOpacity style={styles.mediaPickerBtn} onPress={pickCustomAudio}>
+              <Text style={styles.mediaPickerText}>
+                🎵 {customAudio ? customAudio.name : 'Pick Audio File / Ringtone'}
+              </Text>
+            </TouchableOpacity>
+            {customAudio && (
+              <TouchableOpacity style={styles.clearMediaBtn} onPress={() => setCustomAudio(null)}>
+                <Text style={styles.clearMediaText}>✕</Text>
               </TouchableOpacity>
-            ))}
+            )}
           </View>
 
           <Text style={styles.fieldLabel}>First Ring</Text>
@@ -286,6 +339,7 @@ export default function App() {
                 </View>
                 <Text style={[styles.alarmTime, !item.enabled && { color: '#64748B' }]}>{item.time}</Text>
                 <Text style={styles.alarmTitle}>{item.title}</Text>
+                <Text style={styles.audioLabel}>🔊 {item.audioName || 'Standard Tone'}</Text>
               </View>
 
               <View style={styles.actionsColumn}>
@@ -314,6 +368,8 @@ const styles = StyleSheet.create({
   subHeader: { color: '#64748B', fontSize: 12, marginTop: 2 },
   testBtn: { backgroundColor: '#1E1B4B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#4338CA' },
   testBtnText: { color: '#C7D2FE', fontWeight: '700', fontSize: 13 },
+  stopBtn: { backgroundColor: '#7F1D1D', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#DC2626' },
+  stopBtnText: { color: '#FCA5A5', fontWeight: '800', fontSize: 13 },
   card: { backgroundColor: '#111827', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#1F2937' },
   sectionLabel: { fontSize: 11, fontWeight: '800', color: '#64748B', letterSpacing: 1, marginBottom: 12 },
   input: { backgroundColor: '#0B0F19', color: '#F8FAFC', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#1E293B', marginBottom: 14, fontSize: 15 },
@@ -325,6 +381,11 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#4338CA' },
   chipText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: '#EEF2FF' },
+  mediaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  mediaPickerBtn: { flex: 1, backgroundColor: '#0B0F19', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#334155', borderStyle: 'dashed' },
+  mediaPickerText: { color: '#38BDF8', fontSize: 13, fontWeight: '600' },
+  clearMediaBtn: { backgroundColor: '#1E293B', padding: 12, borderRadius: 10 },
+  clearMediaText: { color: '#EF4444', fontWeight: 'bold' },
   startSegment: { flexDirection: 'row', backgroundColor: '#0B0F19', borderRadius: 10, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: '#1E293B' },
   segmentBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
   segmentBtnActive: { backgroundColor: '#312E81' },
@@ -343,7 +404,8 @@ const styles = StyleSheet.create({
   countdownText: { color: '#38BDF8', fontSize: 11, fontWeight: '600' },
   alarmTime: { fontSize: 28, fontWeight: '800', color: '#F8FAFC' },
   alarmTitle: { color: '#94A3B8', fontSize: 13, marginTop: 2 },
-  actionsColumn: { alignItems: 'flex-end', justifyContent: 'space-between', height: 65 },
+  audioLabel: { color: '#64748B', fontSize: 11, marginTop: 4, fontWeight: '500' },
+  actionsColumn: { alignItems: 'flex-end', justifyContent: 'space-between', height: 75 },
   deleteBtn: { marginTop: 8 },
   deleteText: { color: '#EF4444', fontSize: 12, fontWeight: '600' }
 });
