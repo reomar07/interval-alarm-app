@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, FlatList, TextInput, Switch, ScrollView, StatusBar } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Switch, ScrollView, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
@@ -16,7 +16,7 @@ export default function App() {
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('08:00');
   const [intervalDays, setIntervalDays] = useState('20');
-  const [startOffset, setStartOffset] = useState(0); // 0 = Today, 1 = Tomorrow, 2 = Day After
+  const [startOffset, setStartOffset] = useState(0);
 
   useEffect(() => {
     loadAlarms();
@@ -28,7 +28,7 @@ export default function App() {
   };
 
   const loadAlarms = async () => {
-    const data = await AsyncStorage.getItem('@interval_alarms_v2');
+    const data = await AsyncStorage.getItem('@interval_alarms_clean');
     if (data) setAlarms(JSON.parse(data));
   };
 
@@ -38,7 +38,6 @@ export default function App() {
     target.setDate(target.getDate() + offsetDays);
     target.setHours(h || 8, m || 0, 0, 0);
 
-    // If "Today" is selected but the time already passed today, push to tomorrow
     if (offsetDays === 0 && target <= new Date()) {
       target.setDate(target.getDate() + 1);
     }
@@ -80,7 +79,7 @@ export default function App() {
 
     const updated = [newAlarm, ...alarms];
     setAlarms(updated);
-    await AsyncStorage.setItem('@interval_alarms_v2', JSON.stringify(updated));
+    await AsyncStorage.setItem('@interval_alarms_clean', JSON.stringify(updated));
     setTitle('');
   };
 
@@ -100,15 +99,15 @@ export default function App() {
     }));
 
     setAlarms(updated);
-    await AsyncStorage.setItem('@interval_alarms_v2', JSON.stringify(updated));
+    await AsyncStorage.setItem('@interval_alarms_clean', JSON.stringify(updated));
   };
 
   const deleteAlarm = async (id) => {
     const target = alarms.find(a => a.id === id);
     if (target?.notifId) await Notifications.cancelScheduledNotificationAsync(target.notifId);
-    const filtered = alarms.filter(a => a.id !== id);
+    const filtered = alarms.filter((a) => a.id !== id);
     setAlarms(filtered);
-    await AsyncStorage.setItem('@interval_alarms_v2', JSON.stringify(filtered));
+    await AsyncStorage.setItem('@interval_alarms_clean', JSON.stringify(filtered));
   };
 
   const formatDatePreview = (isoString) => {
@@ -125,7 +124,6 @@ export default function App() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Creator Panel */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>CREATE RECURRING ALARM</Text>
           
@@ -161,7 +159,6 @@ export default function App() {
             </View>
           </View>
 
-          {/* Quick Presets */}
           <View style={styles.chipsRow}>
             {[5, 10, 20, 30].map((d) => (
               <TouchableOpacity 
@@ -174,7 +171,6 @@ export default function App() {
             ))}
           </View>
 
-          {/* Start Date Offset Selector */}
           <Text style={styles.fieldLabel}>First Ring</Text>
           <View style={styles.startSegment}>
             {[
@@ -199,7 +195,6 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* List of Alarms */}
         <Text style={[styles.sectionLabel, { marginTop: 24, marginBottom: 12 }]}>SCHEDULED ALARMS</Text>
         {alarms.length === 0 ? (
           <View style={styles.emptyState}>
@@ -259,7 +254,7 @@ const styles = StyleSheet.create({
   segmentBtnActive: { backgroundColor: '#312E81' },
   segmentText: { color: '#64748B', fontSize: 12, fontWeight: '700' },
   segmentTextActive: { color: '#C7D2FE' },
-  primaryButton: { backgroundColor: '#4F46E5', paddingVertical: 14, borderRadius: 10, alignItems: 'center', shadowColor: '#4F46E5', shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  primaryButton: { backgroundColor: '#4F46E5', paddingVertical: 14, borderRadius: 10, alignItems: 'center', elevation: 4 },
   primaryButtonText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { color: '#475569', fontSize: 14 },
